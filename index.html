@@ -12,7 +12,6 @@
         .screen { background: white; padding: 25px; border-radius: 15px; text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.3); width: 340px; position: absolute; z-index: 20; max-height: 80vh; overflow-y: auto; }
         input { padding: 12px; font-size: 14px; border-radius: 8px; border: 2px solid #ddd; margin-bottom: 10px; width: 85%; outline: none; }
         button { padding: 12px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 93%; margin-top: 5px; transition: 0.2s; }
-        button:hover { background: #c0392b; }
         .admin-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; background: #f9f9f9; padding: 8px; border-radius: 5px; border: 1px solid #eee; }
         .admin-row input { width: 45%; margin: 0; padding: 5px; font-size: 12px; }
         .del-btn { background: #95a5a6; width: auto; padding: 5px 10px; font-size: 10px; }
@@ -31,16 +30,16 @@
 
     <div id="pass-screen" class="screen">
         <h2>Security Check</h2>
-        <p id="pass-desc">Enter Password:</p>
+        <p>Enter Password:</p>
         <input type="password" id="passCode">
-        <button onclick="verifyPass()">Unlock Access</button>
+        <button onclick="verifyPass()">Unlock</button>
     </div>
 
     <div id="admin-panel" class="screen">
         <h2>Cloud Admin</h2>
         <div id="pair-list"></div>
         <hr>
-        <input type="text" id="newPlayer" placeholder="New Player Name" style="width: 40%">
+        <input type="text" id="newPlayer" placeholder="New Player" style="width: 40%">
         <input type="text" id="newCrush" placeholder="Crush Name" style="width: 40%">
         <button onclick="addNewPlayer()" style="background: #3498db;">Add to Cloud</button>
         <button onclick="saveAdmin()" style="background: #27ae60;">Update Everyone</button>
@@ -55,13 +54,18 @@
     <canvas id="gameCanvas" width="400" height="600"></canvas>
 
 <script>
-    // --- FIREBASE SETUP ---
+    // --- YOUR FIREBASE CONFIG ---
     const firebaseConfig = {
         apiKey: "AIzaSyC1qXvcfd452IjxCWCLfs8MxwFK5CKIbo4",
-        databaseURL: "YOUR_DATABASE_URL", // e.g., https://project-id.firebaseio.com
-        projectId: "YOUR_PROJECT_ID"
+        authDomain: "lovequest-88117.firebaseapp.com",
+        projectId: "lovequest-88117",
+        databaseURL: "https://lovequest-88117-default-rtdb.firebaseio.com", 
+        storageBucket: "lovequest-88117.firebasestorage.app",
+        messagingSenderId: "894998135653",
+        appId: "1:894998135653:web:1cf3556d302ac942a3d78c"
     };
 
+    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
     const pairsRef = db.ref('pairs');
@@ -73,13 +77,13 @@
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
 
-    // Live Sync: Updates names without refreshing
+    // Live Cloud Listener
     pairsRef.on('value', (snapshot) => {
         const data = snapshot.val();
         if (data) {
             pairs = data;
             document.getElementById("status-dot").style.background = "#2ecc71";
-            document.getElementById("conn-text").innerText = "Cloud Sync Active";
+            document.getElementById("conn-text").innerText = "Cloud Synced";
         }
     });
 
@@ -104,7 +108,8 @@
             renderList();
         } else if (mode === "aratrik" && p === "20091986") {
             startGame("aratrik");
-        } else { alert("Access Denied"); }
+        } else { alert("Wrong password!"); }
+        document.getElementById("passCode").value = "";
     }
 
     function renderList() {
@@ -124,14 +129,14 @@
         let c = document.getElementById("newCrush").value.trim();
         if(n && c) {
             pairs[n] = c;
-            pairsRef.set(pairs); // Pushes to Cloud
+            pairsRef.set(pairs); 
             renderList();
         }
     }
 
     function deletePlayer(k) {
         delete pairs[k];
-        pairsRef.set(pairs); // Pushes to Cloud
+        pairsRef.set(pairs);
         renderList();
     }
 
@@ -140,7 +145,7 @@
             let input = document.getElementById(`edit-${key}`);
             if(input) pairs[key] = input.value;
         }
-        pairsRef.set(pairs); // Updates everyone live
+        pairsRef.set(pairs);
         document.getElementById("admin-panel").style.display = "none";
         document.getElementById("login-screen").style.display = "block";
     }
@@ -186,7 +191,7 @@
 
     function gameOver() {
         gameRunning = false;
-        document.getElementById("fail-message").innerHTML = `Sorry ${pName}, you failed to achieve love with ${cName}.`;
+        document.getElementById("fail-message").innerHTML = `Sorry ${pName}, you failed to reach ${cName}.`;
         document.getElementById("msg").style.display = "block";
     }
 
