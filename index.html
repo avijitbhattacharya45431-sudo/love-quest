@@ -3,54 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flappy Love Quest</title>
+    <title>Flappy Love: Cloud Sync</title>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-database-compat.js"></script>
     <style>
         body { margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #2c3e50; font-family: 'Segoe UI', sans-serif; }
         canvas { border: 5px solid #ecf0f1; background-color: #70c5ce; display: none; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         .screen { background: white; padding: 25px; border-radius: 15px; text-align: center; box-shadow: 0 10px 20px rgba(0,0,0,0.3); width: 340px; position: absolute; z-index: 20; max-height: 80vh; overflow-y: auto; }
         input { padding: 12px; font-size: 14px; border-radius: 8px; border: 2px solid #ddd; margin-bottom: 10px; width: 85%; outline: none; }
-        input:focus { border-color: #e74c3c; }
         button { padding: 12px; background: #e74c3c; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 93%; margin-top: 5px; transition: 0.2s; }
         button:hover { background: #c0392b; }
         .admin-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; background: #f9f9f9; padding: 8px; border-radius: 5px; border: 1px solid #eee; }
         .admin-row input { width: 45%; margin: 0; padding: 5px; font-size: 12px; }
-        .del-btn { background: #95a5a6; width: auto; padding: 5px 10px; font-size: 10px; margin: 0; }
-        h2 { color: #e74c3c; margin: 0 0 10px 0; }
+        .del-btn { background: #95a5a6; width: auto; padding: 5px 10px; font-size: 10px; }
+        #status-dot { width: 10px; height: 10px; background: #bbb; border-radius: 50%; display: inline-block; margin-right: 5px; }
         #msg, #pass-screen, #admin-panel { display: none; }
-        .backup-btn { background: #34495e; margin-top: 15px; }
-        hr { border: 0; border-top: 1px solid #eee; margin: 15px 0; }
     </style>
 </head>
 <body>
 
     <div id="login-screen" class="screen">
         <h2>❤️ Love Quest</h2>
-        <p>Enter your name to begin:</p>
+        <p><span id="status-dot"></span> <span id="conn-text">Connecting to Cloud...</span></p>
         <input type="text" id="playerName" placeholder="Your Name...">
         <button onclick="checkName()">Enter the Quest</button>
     </div>
 
     <div id="pass-screen" class="screen">
-        <h2 id="pass-title">Security Check</h2>
+        <h2>Security Check</h2>
         <p id="pass-desc">Enter Password:</p>
-        <input type="password" id="passCode" placeholder="****">
+        <input type="password" id="passCode">
         <button onclick="verifyPass()">Unlock Access</button>
     </div>
 
     <div id="admin-panel" class="screen">
-        <h2>Admin Settings</h2>
+        <h2>Cloud Admin</h2>
         <div id="pair-list"></div>
         <hr>
-        <h4>Add New Player</h4>
-        <input type="text" id="newPlayer" placeholder="Player Name" style="width: 40%">
+        <input type="text" id="newPlayer" placeholder="New Player Name" style="width: 40%">
         <input type="text" id="newCrush" placeholder="Crush Name" style="width: 40%">
-        <button onclick="addNewPlayer()" style="background: #3498db;">Add to Database</button>
-        <button onclick="saveAdmin()" style="background: #27ae60;">Save & Return</button>
-        <button onclick="downloadBackup()" class="backup-btn">Download Data Backup</button>
+        <button onclick="addNewPlayer()" style="background: #3498db;">Add to Cloud</button>
+        <button onclick="saveAdmin()" style="background: #27ae60;">Update Everyone</button>
     </div>
 
     <div id="msg" class="screen">
-        <h1 id="status-title">💔 FAILED</h1>
+        <h1>💔 FAILED</h1>
         <p id="fail-message"></p>
         <button onclick="resetGame()">Try Again</button>
     </div>
@@ -58,65 +55,56 @@
     <canvas id="gameCanvas" width="400" height="600"></canvas>
 
 <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    
-    // --- DATABASE SECTION ---
-    // If you want to update names for everyone on GitHub, edit these lines below:
-    const defaultPairs = {
-        "priyanshu": "Rupsha",
-        "ayush": "Many names can not handle",
-        "aratrik": "Trisha",
-        "golu": "Asmita"
+    // --- FIREBASE SETUP ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyC1qXvcfd452IjxCWCLfs8MxwFK5CKIbo4",
+        databaseURL: "YOUR_DATABASE_URL", // e.g., https://project-id.firebaseio.com
+        projectId: "YOUR_PROJECT_ID"
     };
 
-    // Initialize Memory
-    let pairs = JSON.parse(localStorage.getItem("loveQuestData")) || defaultPairs;
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const pairsRef = db.ref('pairs');
 
-    function saveToMemory() {
-        localStorage.setItem("loveQuestData", JSON.stringify(pairs));
-    }
-
+    let pairs = {};
     let pName = ""; let cName = ""; let mode = "";
     let bird = { x: 50, y: 150, gravity: 0.6, lift: -10, velocity: 0 };
     let pipes = []; let frame = 0; let score = 0; let gameRunning = false;
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
 
-    // --- NAVIGATION LOGIC ---
+    // Live Sync: Updates names without refreshing
+    pairsRef.on('value', (snapshot) => {
+        const data = snapshot.val();
+        if (data) {
+            pairs = data;
+            document.getElementById("status-dot").style.background = "#2ecc71";
+            document.getElementById("conn-text").innerText = "Cloud Sync Active";
+        }
+    });
+
     function checkName() {
         pName = document.getElementById("playerName").value.trim();
         let lowName = pName.toLowerCase();
-        
-        if (lowName === "admin") { 
-            mode = "admin"; 
-            showPass("Admin Access", "Enter Admin Password:"); 
-        } else if (lowName === "aratrik") { 
-            mode = "aratrik"; 
-            showPass("Encrypted Profile", "Enter Aratrik's Key:"); 
-        } else { 
-            startGame(lowName); 
-        }
+        if (lowName === "admin") { mode = "admin"; showPass(); }
+        else if (lowName === "aratrik") { mode = "aratrik"; showPass(); }
+        else { startGame(lowName); }
     }
 
-    function showPass(t, d) {
+    function showPass() {
         document.getElementById("login-screen").style.display = "none";
         document.getElementById("pass-screen").style.display = "block";
-        document.getElementById("pass-title").innerText = t;
-        document.getElementById("pass-desc").innerText = d;
     }
 
     function verifyPass() {
         let p = document.getElementById("passCode").value;
-        if (mode === "admin" && p === "2009") openAdmin();
-        else if (mode === "aratrik" && p === "20091986") startGame("aratrik");
-        else alert("Wrong Password!");
-        document.getElementById("passCode").value = "";
-    }
-
-    // --- ADMIN PANEL FUNCTIONS ---
-    function openAdmin() {
-        document.getElementById("pass-screen").style.display = "none";
-        document.getElementById("admin-panel").style.display = "block";
-        renderList();
+        if (mode === "admin" && p === "2009") {
+            document.getElementById("pass-screen").style.display = "none";
+            document.getElementById("admin-panel").style.display = "block";
+            renderList();
+        } else if (mode === "aratrik" && p === "20091986") {
+            startGame("aratrik");
+        } else { alert("Access Denied"); }
     }
 
     function renderList() {
@@ -124,9 +112,9 @@
         list.innerHTML = "";
         for (let key in pairs) {
             list.innerHTML += `<div class="admin-row">
-                <span style="font-size:12px; font-weight:bold; color:#2c3e50;">${key}</span>
+                <b>${key}</b>
                 <input type="text" id="edit-${key}" value="${pairs[key]}">
-                <button class="del-btn" onclick="deletePlayer('${key}')">DEL</button>
+                <button class="del-btn" onclick="deletePlayer('${key}')">X</button>
             </div>`;
         }
     }
@@ -134,32 +122,29 @@
     function addNewPlayer() {
         let n = document.getElementById("newPlayer").value.toLowerCase().trim();
         let c = document.getElementById("newCrush").value.trim();
-        if(n && c) { pairs[n] = c; saveToMemory(); renderList(); 
-            document.getElementById("newPlayer").value=""; document.getElementById("newCrush").value=""; 
+        if(n && c) {
+            pairs[n] = c;
+            pairsRef.set(pairs); // Pushes to Cloud
+            renderList();
         }
     }
 
-    function deletePlayer(k) { delete pairs[k]; saveToMemory(); renderList(); }
+    function deletePlayer(k) {
+        delete pairs[k];
+        pairsRef.set(pairs); // Pushes to Cloud
+        renderList();
+    }
 
     function saveAdmin() {
-        for (let key in pairs) { 
+        for (let key in pairs) {
             let input = document.getElementById(`edit-${key}`);
             if(input) pairs[key] = input.value;
         }
-        saveToMemory();
+        pairsRef.set(pairs); // Updates everyone live
         document.getElementById("admin-panel").style.display = "none";
         document.getElementById("login-screen").style.display = "block";
     }
 
-    function downloadBackup() {
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(pairs, null, 4));
-        const dlAnchorElem = document.createElement('a');
-        dlAnchorElem.setAttribute("href", dataStr);
-        dlAnchorElem.setAttribute("download", "love_quest_backup.json");
-        dlAnchorElem.click();
-    }
-
-    // --- GAME ENGINE ---
     function startGame(l) {
         cName = pairs[l] || "Unknown Soulmate";
         document.getElementById("login-screen").style.display = "none";
@@ -176,61 +161,37 @@
 
     function loop() {
         if (!gameRunning) return;
-        
-        // Background
-        ctx.fillStyle = "#70c5ce"; 
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        
-        // Bird (Heart)
-        bird.velocity += bird.gravity;
-        bird.y += bird.velocity;
-        ctx.font = "30px Arial";
-        ctx.fillText("❤️", bird.x, bird.y);
+        ctx.fillStyle = "#70c5ce"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        bird.velocity += bird.gravity; bird.y += bird.velocity;
+        ctx.font = "30px Arial"; ctx.fillText("❤️", bird.x, bird.y);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.7)"; ctx.fillRect(0, 0, canvas.width, 65);
+        ctx.fillStyle = "#e74c3c"; ctx.font = "bold 14px Arial";
+        ctx.fillText(`PLAYER: ${pName}`, 15, 25); ctx.fillText(`DESTINY: ${cName}`, 15, 50);
+        ctx.fillText(`SCORE: ${score}`, canvas.width - 80, 40);
 
-        // Header
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-        ctx.fillRect(0, 0, canvas.width, 65);
-        ctx.fillStyle = "#e74c3c";
-        ctx.font = "bold 14px Segoe UI";
-        ctx.fillText(`PLAYER: ${pName.toUpperCase()}`, 15, 25);
-        ctx.fillText(`DESTINY: ${cName}`, 15, 50);
-        ctx.font = "bold 24px Segoe UI";
-        ctx.fillText(score, canvas.width - 40, 40);
-
-        // Pipes
         if (frame % 100 === 0) pipes.push({ x: canvas.width, top: Math.random()*250+50, width: 55, gap: 160 });
         for (let i = pipes.length - 1; i >= 0; i--) {
             pipes[i].x -= 3.5;
             ctx.fillStyle = "#27ae60";
             ctx.fillRect(pipes[i].x, 0, pipes[i].width, pipes[i].top);
             ctx.fillRect(pipes[i].x, pipes[i].top + pipes[i].gap, pipes[i].width, canvas.height);
-
-            // Collision
             if (bird.x + 22 > pipes[i].x && bird.x < pipes[i].x + pipes[i].width) {
                 if (bird.y - 22 < pipes[i].top || bird.y > pipes[i].top + pipes[i].gap) gameOver();
             }
             if (pipes[i].x + pipes[i].width < 0) { pipes.splice(i, 1); score++; }
         }
-
         if (bird.y > canvas.height || bird.y < 0) gameOver();
-        frame++;
-        requestAnimationFrame(loop);
+        frame++; requestAnimationFrame(loop);
     }
 
     function gameOver() {
         gameRunning = false;
-        document.getElementById("fail-message").innerHTML = `Sorry <b>${pName}</b>,<br>you failed to achieve love with <b>${cName}</b>.`;
+        document.getElementById("fail-message").innerHTML = `Sorry ${pName}, you failed to achieve love with ${cName}.`;
         document.getElementById("msg").style.display = "block";
     }
 
-    // Controls
-    window.addEventListener("keydown", (e) => { 
-        if (e.code === "Space" && gameRunning) { bird.velocity = bird.lift; e.preventDefault(); }
-    });
-    canvas.addEventListener("touchstart", (e) => { 
-        if (gameRunning) bird.velocity = bird.lift; e.preventDefault(); 
-    }, {passive: false});
+    window.addEventListener("keydown", (e) => { if (e.code === "Space" && gameRunning) bird.velocity = bird.lift; });
+    canvas.addEventListener("touchstart", (e) => { if (gameRunning) bird.velocity = bird.lift; e.preventDefault(); }, {passive: false});
 </script>
 </body>
-
 </html>
